@@ -1,0 +1,16 @@
+{
+  "name": "ash2ash",
+  "description": "Web content archival plugins for Claude Code",
+  "owner": {
+    "name": "nouer"
+  },
+  "plugins": [
+    {
+      "name": "mdbird",
+      "description": "Archive tweets/X posts as clean Markdown files with locally-saved images",
+      "version": "1.0.0",
+      "source": "./plugins/mdbird",
+      "category": "productivity"
+    }
+  ]
+}

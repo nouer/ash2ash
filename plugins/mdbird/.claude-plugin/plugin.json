@@ -1,0 +1,10 @@
+{
+  "name": "mdbird",
+  "description": "Archive tweets/X posts as clean Markdown files with locally-saved images",
+  "version": "1.0.0",
+  "author": {
+    "name": "nouer"
+  },
+  "repository": "https://github.com/nouer/ash2ash",
+  "keywords": ["twitter", "x", "archive", "markdown", "tweet", "playwright"]
+}

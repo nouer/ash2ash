@@ -1,0 +1,17 @@
+# mdbird output (root level only)
+/mdbird/
+
+# Playwright
+.playwright-mcp/
+
+# Claude Code
+.claude/plans/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
