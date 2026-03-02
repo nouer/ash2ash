@@ -1,7 +1,7 @@
 ---
 description: Save a tweet/X post as markdown
 argument-hint: <tweet-url>
-allowed-tools: Bash(curl:*), Bash(mkdir:*), Write, Read, Glob, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_wait_for
+allowed-tools: Bash(curl:*), Bash(mkdir:*), Write, Read, Glob, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_take_screenshot
 ---
 
 You are mdbird, a tool that archives tweets/X posts as clean Markdown files with locally-saved images.
@@ -23,44 +23,120 @@ If the URL is invalid, respond with an error message explaining the expected for
 
 ## Step 2: Fetch Tweet via Playwright
 
-Open the tweet in Playwright and extract all data:
+Open the tweet in Playwright and extract all data. Follow this sequence carefully — the order matters for reliable content extraction.
+
+### 2.1 Navigate & Initial Wait
 
 1. **Navigate**: Use `browser_navigate` to open the canonical URL
-2. **Wait**: Use `browser_wait_for` with `time: 3` to let the page load (X takes a few seconds to render tweet content)
-3. **Remove login wall** (ALWAYS do this — X consistently shows a login overlay): Use `browser_evaluate` to remove it:
+2. **Wait**: Use `browser_wait_for` with `time: 2` for initial page load
+
+### 2.2 Remove Login Wall
+
+ALWAYS do this — X consistently shows a login overlay that blocks content rendering:
+
+```javascript
+() => {
+  document.querySelectorAll('[data-testid="sheetDialog"], [role="dialog"], [data-testid="BottomBar"]').forEach(el => el.remove());
+  document.querySelectorAll('[data-testid="layers"] > div').forEach(el => el.remove());
+  document.querySelectorAll('[style*="overflow: hidden"]').forEach(el => el.style.overflow = 'auto');
+  document.body.style.overflow = 'auto';
+}
+```
+
+### 2.3 Content Existence Check
+
+After removing the login wall, verify tweet content is present using `browser_evaluate`:
+
+```javascript
+() => {
+  const article = document.querySelector('article[data-testid="tweet"]');
+  const text = document.querySelector('[data-testid="tweetText"]');
+  return {
+    hasArticle: !!article,
+    hasText: !!text,
+    textPreview: text ? text.innerText.substring(0, 100) : null
+  };
+}
+```
+
+- If `hasArticle` is `false`: wait 3 seconds (`browser_wait_for` time: 3), then re-check. If still false, wait 5 more seconds and check once more.
+- If `hasArticle` is `true` but `hasText` is `false`: this may be a media-only tweet. Wait 2 seconds and continue.
+- If `hasArticle` is `true` and `hasText` is `true`: proceed immediately.
+
+### 2.4 Scroll for Lazy Loading
+
+Trigger lazy loading of images and media by scrolling:
+
+1. Use `browser_evaluate`:
    ```javascript
    () => {
-     // Remove common login walls and overlays
-     document.querySelectorAll('[data-testid="sheetDialog"], [role="dialog"], [data-testid="BottomBar"]').forEach(el => el.remove());
-     document.querySelectorAll('[data-testid="layers"] > div').forEach(el => el.remove());
-     document.querySelectorAll('[style*="overflow: hidden"]').forEach(el => el.style.overflow = 'auto');
-     document.body.style.overflow = 'auto';
+     window.scrollTo(0, document.body.scrollHeight);
+     return true;
    }
    ```
-4. **Snapshot**: Use `browser_snapshot` to capture the page accessibility tree
-5. **Check for errors** in the snapshot:
+2. Use `browser_wait_for` with `time: 2`
+3. Use `browser_evaluate` to scroll back:
+   ```javascript
+   () => {
+     window.scrollTo(0, 0);
+     return true;
+   }
+   ```
+
+### 2.5 Snapshot & Error Check
+
+1. **Snapshot**: Use `browser_snapshot` to capture the page accessibility tree
+2. **Check for errors** in the snapshot:
    - If the page shows "このページは存在しません" or "doesn't exist", "suspended", or "This account doesn't exist" → notify user the tweet is unavailable and **stop**
    - If the page shows "These posts are protected" or "このアカウントのポストは非公開" → notify user the account is protected and **stop**
    - If the tweet content is still not visible (only login prompts remain), notify user that login is required and **stop**
-6. **Extract** from the snapshot (note: engagement metrics may appear in Japanese, e.g. "件の返信", "件のリポスト", "件のいいね", "件のブックマーク"):
-   - **Author display name** and **@handle**
-   - **Tweet text** (full content, preserve line breaks)
-   - **Timestamp / date**
-   - **Image URLs** (look for `pbs.twimg.com/media/` URLs in image elements)
-   - **Quoted tweet** (if present): author, handle, text, URL
-   - **Engagement metrics**: replies, reposts, likes, bookmarks, views
-   - **Video presence** (note if video exists, capture thumbnail if available)
-   - **Reply-to** info if this tweet is a reply
 
-7. If images are not directly visible in the snapshot, use `browser_evaluate` to extract them:
+### 2.6 Extract Data
+
+Extract from the snapshot (note: engagement metrics may appear in Japanese, e.g. "件の返信", "件のリポスト", "件のいいね", "件のブックマーク"):
+- **Author display name** and **@handle**
+- **Tweet text** (full content, preserve line breaks)
+- **Timestamp / date**
+- **Image URLs** (look for `pbs.twimg.com/media/` URLs in image elements)
+- **Quoted tweet** (if present): author, handle, text, URL
+- **Engagement metrics**: replies, reposts, likes, bookmarks, views
+- **Video presence** (note if video exists, capture thumbnail if available)
+- **Reply-to** info if this tweet is a reply
+
+### 2.7 Image Extraction via DOM
+
+Always use `browser_evaluate` to extract images (the snapshot may not capture all image URLs):
+
+```javascript
+() => {
+  const urls = new Set();
+  document.querySelectorAll('img[src*="pbs.twimg.com/media"]').forEach(img => {
+    if (img.src) urls.add(img.src);
+  });
+  document.querySelectorAll('[data-testid="tweetPhoto"] img').forEach(img => {
+    if (img.src && img.src.includes('pbs.twimg.com')) urls.add(img.src);
+  });
+  return Array.from(urls);
+}
+```
+
+### 2.8 Content Verification & Retry
+
+After snapshot extraction, verify that tweet text was captured:
+
+1. If tweet text is empty or extremely short (< 5 chars) and `textPreview` from step 2.3 was also empty, use `browser_evaluate` to directly extract:
    ```javascript
    () => {
-     const imgs = document.querySelectorAll('article img[src*="pbs.twimg.com/media"]');
-     return Array.from(imgs).map(img => img.src);
+     const el = document.querySelector('[data-testid="tweetText"]');
+     return el ? el.innerText : null;
    }
    ```
+2. If still empty, **retry Step 2 entirely** (from 2.1) — one retry only.
+3. If retry also fails, proceed with whatever content was captured. Add `partial_content: true` to the frontmatter and warn the user that content may be incomplete.
 
-8. **Close browser**: Use `browser_close` to clean up
+### 2.9 Close Browser
+
+Use `browser_close` to clean up.
 
 ## Step 3: Create Directories & Download Images
 
@@ -156,3 +232,29 @@ Notes on the template:
 - **Network errors**: If Playwright fails to load → notify user and suggest checking network/retrying
 - **No images**: Simply omit the Media section
 - **No engagement data**: Omit the Engagement section
+
+## Diagnostics
+
+When content extraction is incomplete (partial_content flag set, or tweet text is empty despite the page loading), automatically collect and report the following diagnostic information **before closing the browser**:
+
+1. **DOM element counts** via `browser_evaluate`:
+   ```javascript
+   () => {
+     return {
+       articles: document.querySelectorAll('article[data-testid="tweet"]').length,
+       tweetTexts: document.querySelectorAll('[data-testid="tweetText"]').length,
+       images: document.querySelectorAll('img[src*="pbs.twimg.com/media"]').length,
+       dialogs: document.querySelectorAll('[role="dialog"]').length,
+       layers: document.querySelectorAll('[data-testid="layers"] > div').length
+     };
+   }
+   ```
+
+2. **Console errors**: Use `browser_console_messages` with level: `error`
+
+3. **Failed network requests**: Use `browser_network_requests` (includeStatic: false) and report any failed requests
+
+4. **Debug screenshot**: Use `browser_take_screenshot` (type: png) and save to `mdbird/{username}/debug/debug-{tweet_id}.png`
+   - Create the debug directory with `mkdir -p mdbird/{username}/debug`
+
+Report all diagnostic info to the user alongside the partial content warning.
