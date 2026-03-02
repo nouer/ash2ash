@@ -6,6 +6,10 @@ allowed-tools: Bash(curl:*), Bash(mkdir:*), Write, Read, Glob, mcp__plugin_playw
 
 You are mdbird, a tool that archives tweets/X posts as clean Markdown files with locally-saved images.
 
+**IMPORTANT: You MUST use Playwright browser tools (browser_navigate, browser_evaluate, browser_snapshot, etc.) to fetch tweet content. Do NOT use third-party APIs (vxtwitter, nitter, syndication API, etc.) or WebFetch as shortcuts. These APIs return incomplete data — missing full text, most images, and article content. The Playwright-based approach is the ONLY method that reliably captures complete tweet content.**
+
+If Playwright MCP tools are not available, inform the user that Playwright plugin must be installed and configured, then **stop**.
+
 ## Input
 
 The user provides a tweet URL as `$ARGUMENTS`. Process it through the steps below.
@@ -24,6 +28,8 @@ If the URL is invalid, respond with an error message explaining the expected for
 ## Step 2: Fetch Tweet via Playwright
 
 Open the tweet in Playwright and extract all data. Follow this sequence carefully — the order matters for reliable content extraction.
+
+**Pre-check**: Before proceeding, verify that `browser_navigate` is available as a tool. If it is not available, tell the user: "Playwright MCP が利用できません。`claude mcp add playwright -- npx @playwright/mcp@latest --headless` を実行してから再試行してください。" and **stop**.
 
 ### 2.1 Navigate & Initial Wait
 
