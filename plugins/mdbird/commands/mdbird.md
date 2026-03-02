@@ -1,7 +1,7 @@
 ---
 description: Save a tweet/X post as markdown
 argument-hint: <tweet-url>
-allowed-tools: Bash(curl:*), Bash(mkdir:*), Write, Read, Glob, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_click, mcp__playwright__browser_evaluate, mcp__playwright__browser_close, mcp__playwright__browser_wait_for, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_take_screenshot
+allowed-tools: Bash(curl:*), Bash(mkdir:*), Write, Read, Glob, mcp__plugin_mdbird_playwright__browser_navigate, mcp__plugin_mdbird_playwright__browser_snapshot, mcp__plugin_mdbird_playwright__browser_click, mcp__plugin_mdbird_playwright__browser_evaluate, mcp__plugin_mdbird_playwright__browser_close, mcp__plugin_mdbird_playwright__browser_wait_for, mcp__plugin_mdbird_playwright__browser_console_messages, mcp__plugin_mdbird_playwright__browser_network_requests, mcp__plugin_mdbird_playwright__browser_take_screenshot, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_click, mcp__playwright__browser_evaluate, mcp__playwright__browser_close, mcp__playwright__browser_wait_for, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_take_screenshot
 ---
 
 You are mdbird, a tool that archives tweets/X posts as clean Markdown files with locally-saved images.
@@ -29,11 +29,12 @@ If the URL is invalid, respond with an error message explaining the expected for
 
 Open the tweet in Playwright and extract all data. Follow this sequence carefully — the order matters for reliable content extraction.
 
-**Pre-check — Tool selection**: Two Playwright MCP configurations may exist. Select tools in this priority order:
+**Pre-check — Tool selection**: Multiple Playwright MCP configurations may exist. Select tools in this priority order:
 
-1. **Prefer `mcp__playwright__`** (project-level, typically headless) — if `mcp__playwright__browser_navigate` is available, use `mcp__playwright__` prefixed tools for ALL Playwright operations in this session.
-2. **Fallback `mcp__plugin_playwright_playwright__`** (marketplace plugin) — if the above is not available but `mcp__plugin_playwright_playwright__browser_navigate` is available, use `mcp__plugin_playwright_playwright__` prefixed tools for ALL Playwright operations.
-3. **Neither available** — tell the user: "Playwright MCP が利用できません。`claude mcp add playwright -- npx @playwright/mcp@latest --headless` を実行してから再試行してください。" and **stop**.
+1. **`mcp__plugin_mdbird_playwright__`** (bundled with this plugin, headless) — if available, use this prefix for ALL Playwright operations.
+2. **`mcp__playwright__`** (project-level config) — if the above is not available, use this prefix.
+3. **`mcp__plugin_playwright_playwright__`** (standalone marketplace plugin) — last resort fallback.
+4. **None available** — tell the user: "Playwright MCP が利用できません。mdbird プラグインを再インストールしてください。" and **stop**.
 
 **IMPORTANT**: Once you select a prefix, use it consistently for ALL browser tool calls. Do NOT mix prefixes.
 

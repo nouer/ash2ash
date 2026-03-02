@@ -12,17 +12,7 @@ Archive tweets/X posts as clean Markdown files with locally-saved images.
 
 ## Prerequisites
 
-- **Playwright plugin** must be installed and enabled in Claude Code
-
-### ヘッドレスモード（推奨）
-
-ブラウザを非表示で動作させるには、プロジェクトディレクトリで以下を実行:
-
-```
-claude mcp add playwright -- npx @playwright/mcp@latest --headless
-```
-
-これにより、Playwright MCP がヘッドレスモードで起動し、ブラウザウィンドウが表示されなくなります。
+- Playwright は本プラグインに同梱されています（ヘッドレスモード）。追加設定は不要です。
 
 ## Usage
 
