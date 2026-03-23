@@ -16,8 +16,41 @@ Archive tweets/X posts as clean Markdown files with locally-saved images.
 
 ブラウザツールが1つ以上必要です（優先順に）:
 
-1. **browser-use CLI** (推奨) — `pip install browser-use` でインストール。デーモンベースで高速。
+1. **browser-use CLI** (推奨) — デーモンベースで高速。セットアップは下記参照。
 2. **Playwright MCP** (フォールバック) — 本プラグインに同梱されています。追加設定は不要です。
+
+### browser-use CLI のセットアップ
+
+#### 1. CLI のインストール
+
+**macOS / Linux:**
+```bash
+curl -fsSL https://browser-use.com/cli/install.sh | bash
+```
+
+**Windows** (PowerShell):
+```powershell
+& "C:\Program Files\Git\bin\bash.exe" -c 'curl -fsSL https://browser-use.com/cli/install.sh | bash'
+```
+
+インストール後の確認:
+```bash
+browser-use doctor   # インストールを検証
+```
+
+#### 2. Claude Code スキルのインストール
+
+browser-use CLI の Claude Code スキルを導入すると、mdbird 以外のブラウザ操作タスクでも browser-use が活用されます:
+
+```bash
+mkdir -p ~/.claude/skills/browser-use
+curl -o ~/.claude/skills/browser-use/SKILL.md \
+  https://raw.githubusercontent.com/browser-use/browser-use/main/skills/browser-use/SKILL.md
+```
+
+> **Note:** スキルのインストールは任意です。mdbird は browser-use CLI のパスが通っていれば（`which browser-use` で検出）スキルなしでも動作します。
+
+詳細: [browser-use CLI ドキュメント](https://github.com/browser-use/browser-use/blob/main/browser_use/skill_cli/README.md)
 
 ## Usage
 
