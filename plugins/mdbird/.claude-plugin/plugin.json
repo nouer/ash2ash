@@ -1,7 +1,7 @@
 {
   "name": "mdbird",
   "description": "Archive tweets/X posts as clean Markdown files with locally-saved images",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "author": {
     "name": "nouer"
   },
