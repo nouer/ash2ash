@@ -4,9 +4,9 @@ Web content archival plugins for [Claude Code](https://claude.com/claude-code).
 
 ## Plugins
 
-| Plugin | Description |
-|--------|-------------|
-| [mdbird](./plugins/mdbird/) | Archive tweets/X posts as clean Markdown files with locally-saved images |
+| Plugin | Version | Description |
+|--------|---------|-------------|
+| [mdbird](./plugins/mdbird/) | 1.2.0 | Archive tweets/X posts as clean Markdown files with locally-saved images |
 
 ## Installation
 
@@ -31,7 +31,9 @@ Or add the marketplace manually to `~/.claude/settings.json`:
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code)
-- [Playwright plugin](https://github.com/anthropics/claude-code-plugins) (required by mdbird)
+- **Browser tool** (one of the following):
+  - [browser-use CLI](https://github.com/browser-use/browser-use) (recommended — fast daemon-based automation)
+  - Playwright MCP (bundled with the plugin as fallback)
 
 ## License
 
