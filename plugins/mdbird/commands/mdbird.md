@@ -52,15 +52,23 @@ The steps below describe browser operations abstractly. Use the appropriate tool
 | Operation | browser-use CLI (Bash) | Playwright MCP |
 |-----------|----------------------|----------------|
 | Navigate | `browser-use open "<url>"` | `browser_navigate(url)` |
-| Execute JS | `browser-use eval '<js>'` | `browser_evaluate(function: "() => { ... }")` |
+| Execute JS | `browser-use eval "<js>"` | `browser_evaluate(function: "() => { ... }")` |
+| Wait for element | `browser-use wait selector "<css>"` | `browser_wait_for(time: N)` |
+| Wait for text | `browser-use wait text "<text>"` | `browser_wait_for(time: N)` |
 | Wait N sec | `sleep N` | `browser_wait_for(time: N)` |
+| Scroll | `browser-use scroll down` / `browser-use scroll up` | `browser_evaluate` with `window.scrollTo(...)` |
 | Screenshot | `browser-use screenshot <path>` | `browser_take_screenshot` + save |
 | Close | `browser-use close` | `browser_close` |
-| Page state | `browser-use eval 'document.title'` | `browser_snapshot` |
+| Page state | `browser-use state` | `browser_snapshot` |
 
 **JavaScript format difference:**
 - **browser-use**: Pass JS as an expression or IIFE: `browser-use eval '(()=>{ ...; return result; })()'`
 - **Playwright**: Pass JS as an arrow function string: `browser_evaluate(function: "() => { ...; return result; }")`
+
+**browser-use command chaining:** Sequential commands that don't need intermediate inspection can be chained with `&&`:
+```bash
+browser-use open "<url>" && sleep 2 && browser-use eval '<remove-login-wall-js>'
+```
 
 ## Step 3: Fetch Tweet Content
 
@@ -69,7 +77,9 @@ Follow this sequence carefully — the order matters for reliable content extrac
 ### 3.1 Navigate & Initial Wait
 
 1. **Navigate** to the canonical URL
-2. **Wait** 2 seconds for initial page load
+2. **Wait** for the page to load:
+   - **browser-use**: `browser-use wait selector "article[data-testid='tweet']" --timeout 5000` (falls back to `sleep 2` if timeout)
+   - **Playwright**: `browser_wait_for` with `time: 2`
 
 ### 3.2 Remove Login Wall
 
@@ -104,11 +114,17 @@ Execute this JavaScript to verify tweet content is present:
 
 ### 3.4 Scroll for Lazy Loading
 
-Execute these JavaScript commands sequentially to trigger lazy loading:
+Trigger lazy loading of images and media:
 
-1. Scroll down: `window.scrollTo(0, document.body.scrollHeight)`
+**browser-use**:
+```bash
+browser-use scroll down --amount 5000 && sleep 2 && browser-use scroll up --amount 5000
+```
+
+**Playwright**: Execute JS sequentially:
+1. `window.scrollTo(0, document.body.scrollHeight)`
 2. Wait 2 seconds
-3. Scroll back up: `window.scrollTo(0, 0)`
+3. `window.scrollTo(0, 0)`
 
 ### 3.5 Error Check
 
