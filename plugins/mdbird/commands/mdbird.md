@@ -235,6 +235,82 @@ Notes on the template:
    - First ~80 characters of tweet text
    - Number of images saved locally
    - Any warnings (failed image downloads, video present but not saved, etc.)
+   - Japanese translation status (if Step 6 was executed)
+
+## Step 6: Japanese Translation (Non-Japanese Content)
+
+After saving the original file, determine the language of the tweet content and create a Japanese translation if needed.
+
+### 6.1 Language Detection
+
+Analyze the tweet text (including article body if present) to determine its primary language:
+- If **50% or more** of the characters are Japanese (hiragana, katakana, kanji) → **Skip Step 6 entirely**
+- Otherwise → proceed to create a Japanese translation
+
+### 6.2 Generate Translated Markdown
+
+Create a Japanese-translated version of the Markdown file. Use the same structure as the original, with these changes:
+
+- **Frontmatter**: Add `language: "ja"` and `translated_from: "tweet-{username}-{tweet_id}.md"`
+- **Tweet text** (blockquote): Translate to natural Japanese (意訳寄り、自然な日本語)
+- **Article Content section**: Translate to Japanese
+  - Preserve heading hierarchy, bullet structure, and formatting
+  - Keep code snippets, file names, URLs, and technical identifiers as-is
+  - Translate blockquotes
+- **Quoted Tweet**: Translate the text
+- **Keep unchanged**:
+  - Media section (same relative image paths — images are shared)
+  - Engagement section (numbers as-is)
+  - Frontmatter basics (author, handle, date, tweet_id, url)
+  - Section heading for "Engagement" stays as "Engagement"
+
+Translated file template:
+
+```markdown
+---
+title: "Tweet by @{handle}"
+author: "{display_name}"
+handle: "@{handle}"
+date: "{YYYY-MM-DD}"
+tweet_id: "{tweet_id}"
+url: "{canonical_url}"
+archived_at: "{current ISO 8601 datetime}"
+language: "ja"
+translated_from: "tweet-{username}-{tweet_id}.md"
+---
+
+# @{handle} - {display_name}
+
+> {翻訳されたツイート本文}
+
+**{human-readable date}**
+
+## Media
+
+(same image references as original)
+
+## 記事内容
+
+(translated article body — preserve structure)
+
+## Engagement
+
+(same as original)
+
+---
+
+*[{canonical_url}]({canonical_url}) より {current date} にアーカイブ・翻訳*
+```
+
+### 6.3 Save Translated File
+
+Save to `mdbird/{username}/tweet-{username}-{tweet_id}_ja.md` using the Write tool.
+
+### 6.4 Report
+
+Add to the summary report:
+- "日本語翻訳版も保存しました: {path}"
+- Detected source language (e.g., "原文: 英語")
 
 ## Edge Cases
 
