@@ -6,7 +6,7 @@ allowed-tools: Bash(browser-use:*), Bash(curl:*), Bash(mkdir:*), Bash(sleep:*), 
 
 You are mdbird, a tool that archives tweets/X posts as clean Markdown files with locally-saved images.
 
-**IMPORTANT: You MUST use a real browser (browser-use CLI or Playwright MCP) to fetch tweet content. Do NOT use third-party APIs (vxtwitter, nitter, syndication API, etc.) or WebFetch as shortcuts. These APIs return incomplete data — missing full text, most images, and article content.**
+**IMPORTANT: You MUST use a real browser (browser-use CLI via the bundled helper, or Playwright MCP) to fetch tweet content. Do NOT use third-party APIs (vxtwitter, nitter, syndication API, etc.) or WebFetch as shortcuts. These APIs return incomplete data — missing full text, most images, and article content.**
 
 ## Input
 
@@ -29,11 +29,15 @@ Determine which browser tool to use. Check in this priority order:
 
 ### Priority 1: browser-use CLI (preferred)
 
-Run `which browser-use` via Bash. If the command exists, use **browser-use CLI** for all browser operations.
+Run `"${CLAUDE_PLUGIN_ROOT}/scripts/mdb-browser.sh" check` via Bash. If it prints `ok`, use **browser-use** through this helper script for all browser operations.
+
+The helper is required because browser-use 1.0 removed the old subcommands (`open`, `eval`, `scroll`, `screenshot`, `close`) and, by default, attaches to the user's **running** Chrome. The helper instead launches a dedicated headless Chrome with a throwaway profile on a free port and talks only to it, so the user's own browser is never touched. **Never call `browser-use` directly for mdbird.**
+
+If `check` fails because browser-use is older than 1.0, tell the user to run `uv tool upgrade browser-use` (or `pip install -U browser-use`) and fall back to Playwright for this run.
 
 ### Priority 2: Playwright MCP (fallback)
 
-If browser-use is not available, use Playwright MCP tools. Select the prefix in this order:
+If the helper's `check` fails, use Playwright MCP tools. Select the prefix in this order:
 
 1. **`mcp__plugin_mdbird_playwright__`** (bundled with this plugin, headless)
 2. **`mcp__playwright__`** (project-level config)
@@ -43,42 +47,63 @@ Once you select a Playwright prefix, use it consistently for ALL browser tool ca
 
 ### Priority 3: None available
 
-Tell the user: "ブラウザツールが利用できません。browser-use CLI をインストールするか、Playwright MCP を設定してください。" and **stop**.
+Tell the user: "ブラウザツールが利用できません。browser-use CLI（1.0 以降）をインストールするか、Playwright MCP を設定してください。" and **stop**.
 
 ### Operation Mapping
 
 The steps below describe browser operations abstractly. Use the appropriate tool based on your selection:
 
-| Operation | browser-use CLI (Bash) | Playwright MCP |
+In the browser-use column, `MDB` stands for "${CLAUDE_PLUGIN_ROOT}/scripts/mdb-browser.sh" and `S` is the session name — **use the `tweet_id`**. The session name keeps concurrent runs apart; use the same one for every call in this run.
+
+| Operation | browser-use (Bash, via helper) | Playwright MCP |
 |-----------|----------------------|----------------|
-| Navigate | `browser-use open "<url>"` | `browser_navigate(url)` |
-| Execute JS | `browser-use eval "<js>"` | `browser_evaluate(function: "() => { ... }")` |
-| Wait for element | `browser-use wait selector "<css>"` | `browser_wait_for(time: N)` |
-| Wait for text | `browser-use wait text "<text>"` | `browser_wait_for(time: N)` |
+| Start browser (+ load cookies) | `MDB start S` | — (navigate directly) |
+| Navigate | `MDB open S "<url>"` | `browser_navigate(url)` |
+| Execute JS | `MDB js S '<js>'` (or pipe the JS on stdin: `MDB js S <<'JS' ... JS`) | `browser_evaluate(function: "() => { ... }")` |
+| Wait for element | `MDB js S` with a polling promise (see 3.1a) | `browser_wait_for(time: N)` |
 | Wait N sec | `sleep N` | `browser_wait_for(time: N)` |
-| Scroll | `browser-use scroll down` / `browser-use scroll up` | `browser_evaluate` with `window.scrollTo(...)` |
-| Screenshot | `browser-use screenshot <path>` | `browser_take_screenshot` + save |
-| Close | `browser-use close` | `browser_close` |
-| Page state | `browser-use state` | `browser_snapshot` |
+| Scroll (load lazy content, then back to top) | `MDB scroll S` | `browser_evaluate` with `window.scrollTo(...)` |
+| Screenshot | `MDB screenshot S <path>` | `browser_take_screenshot` + save |
+| Close | `MDB stop S` | `browser_close` |
 
 **JavaScript format difference:**
-- **browser-use**: Pass JS as an expression or IIFE: `browser-use eval '(()=>{ ...; return result; })()'`
+- **browser-use**: Pass JS as an expression or IIFE: `MDB js S '(()=>{ ...; return result; })()'`. A returned Promise is awaited. Strings are printed as-is; other values are printed as JSON. For long scripts, pipe them on stdin with a quoted heredoc so the shell leaves quotes alone.
 - **Playwright**: Pass JS as an arrow function string: `browser_evaluate(function: "() => { ...; return result; }")`
 
 **browser-use command chaining:** Sequential commands that don't need intermediate inspection can be chained with `&&`:
 ```bash
-browser-use open "<url>" && sleep 2 && browser-use eval '<remove-login-wall-js>'
+MDB open S "<url>" && sleep 2 && MDB js S '<remove-login-wall-js>'
 ```
+
+**Always run `MDB stop S` when finished — including when you stop early** (tweet not found, protected account, errors). As a safety net the helper stops the browser by itself after 30 minutes.
 
 ## Step 3: Fetch Tweet Content
 
 Follow this sequence carefully — the order matters for reliable content extraction.
 
-### 3.1 Navigate & Initial Wait
+### 3.1 Load X Cookies (if available)
+
+Before navigating, check if X(Twitter) cookies are available. Cookies enable thread (self-reply) fetching which is blocked for logged-out users, and the full body of long-form articles.
+
+**browser-use:** `MDB start S` launches the browser and loads cookies by itself. It looks for `$MDBIRD_COOKIES`, then `~/.config/mdbird/x_cookies.json`, then `~/.config/mdbird/x-cookies.json`. Both a cookie array (as exported via CDP or a browser extension) and `{"auth_token": "...", "ct0": "..."}` are accepted. It prints `ready cookies=N` or `ready no-cookies`. **Never print the cookie file's contents.**
+
+**Playwright:** check for the cookie file (`~/.config/mdbird/x-cookies.json` with `auth_token` and `ct0`), then:
+```javascript
+// Set cookies via browser_evaluate after navigating to x.com
+document.cookie = 'auth_token={auth_token};domain=.x.com;path=/;secure';
+document.cookie = 'ct0={ct0};domain=.x.com;path=/;secure';
+```
+
+Then navigate to the tweet URL (Step 3.1a). If cookies are NOT available, proceed without them — thread replies may not be available.
+
+### 3.1a Navigate & Initial Wait
 
 1. **Navigate** to the canonical URL
 2. **Wait** for the page to load:
-   - **browser-use**: `browser-use wait selector "article[data-testid='tweet']" --timeout 5000` (falls back to `sleep 2` if timeout)
+   - **browser-use**: poll for up to 5 seconds (prints `true`/`false`; on `false`, `sleep 2` and continue):
+     ```bash
+     MDB js S '(async()=>{for(let i=0;i<20;i++){if(document.querySelector("article[data-testid=tweet]"))return true;await new Promise(r=>setTimeout(r,250))}return false})()'
+     ```
    - **Playwright**: `browser_wait_for` with `time: 2`
 
 ### 3.2 Remove Login Wall
@@ -114,17 +139,20 @@ Execute this JavaScript to verify tweet content is present:
 
 ### 3.4 Scroll for Lazy Loading
 
-Trigger lazy loading of images and media:
+Trigger lazy loading of images, media, and thread replies:
 
 **browser-use**:
 ```bash
-browser-use scroll down --amount 5000 && sleep 2 && browser-use scroll up --amount 5000
+MDB scroll S
 ```
+(Scrolls to the bottom until the page height stops growing, then back to the top.)
 
 **Playwright**: Execute JS sequentially:
-1. `window.scrollTo(0, document.body.scrollHeight)`
+1. `window.scrollTo(0, 3000)` — scroll to load replies
 2. Wait 2 seconds
-3. `window.scrollTo(0, 0)`
+3. `window.scrollTo(0, document.body.scrollHeight)` — scroll to bottom for remaining replies
+4. Wait 2 seconds
+5. `window.scrollTo(0, 0)` — scroll back to top
 
 ### 3.5 Error Check
 
@@ -219,6 +247,93 @@ Execute this JavaScript to extract all tweet data at once:
 
 **For Playwright MCP users**: You can also use `browser_snapshot` to capture the accessibility tree and extract data from it. The snapshot often provides a clearer view of the page structure.
 
+### 3.6a Extract Thread Replies (Self-Replies)
+
+After extracting the main tweet, check for thread continuation — replies from the **same author** chained below the original tweet. On X, a thread appears as multiple `article` elements on the tweet's page.
+
+First, scroll down to ensure replies are loaded, then execute this JavaScript:
+
+```javascript
+(()=>{
+  const articles = document.querySelectorAll('article[data-testid="tweet"]');
+  if (articles.length <= 1) return JSON.stringify({ threadReplies: [] });
+
+  // Get the main tweet's author handle from the first article
+  const mainArticle = articles[0];
+  const mainAuthorEl = mainArticle.querySelector('[data-testid="User-Name"]');
+  let mainHandle = '';
+  if (mainAuthorEl) {
+    const spans = mainAuthorEl.querySelectorAll('span');
+    for (const s of spans) {
+      if (s.textContent.startsWith('@')) { mainHandle = s.textContent; break; }
+    }
+  }
+  if (!mainHandle) return JSON.stringify({ threadReplies: [], error: 'no main handle' });
+
+  const replies = [];
+  // Skip first article (the main tweet) — iterate remaining articles
+  for (let i = 1; i < articles.length; i++) {
+    const art = articles[i];
+
+    // Check if this reply is from the same author
+    const authorEl = art.querySelector('[data-testid="User-Name"]');
+    let replyHandle = '';
+    if (authorEl) {
+      const spans = authorEl.querySelectorAll('span');
+      for (const s of spans) {
+        if (s.textContent.startsWith('@')) { replyHandle = s.textContent; break; }
+      }
+    }
+    if (replyHandle !== mainHandle) continue; // Skip replies from other users
+
+    // Extract reply content
+    const textEl = art.querySelector('[data-testid="tweetText"]');
+    const timeEl = art.querySelector('time');
+    const replyText = textEl ? textEl.innerText : '';
+    const replyTimestamp = timeEl ? timeEl.getAttribute('datetime') : '';
+    const replyTimeText = timeEl ? timeEl.textContent : '';
+
+    // Extract reply tweet ID from the time element's parent link
+    let replyTweetId = '';
+    const timeLink = art.querySelector('a[href*="/status/"] time');
+    if (timeLink && timeLink.parentElement) {
+      const href = timeLink.parentElement.getAttribute('href') || '';
+      const match = href.match(/\/status\/(\d+)/);
+      if (match) replyTweetId = match[1];
+    }
+
+    // Extract images from reply
+    const replyImages = [];
+    art.querySelectorAll('img[src*="pbs.twimg.com/media"]').forEach(img => {
+      if (img.src) replyImages.push(img.src);
+    });
+    art.querySelectorAll('[data-testid="tweetPhoto"] img').forEach(img => {
+      if (img.src && img.src.includes('pbs.twimg.com') && !replyImages.includes(img.src)) {
+        replyImages.push(img.src);
+      }
+    });
+
+    const hasVideo = !!art.querySelector('video, [data-testid="videoPlayer"]');
+
+    replies.push({
+      tweetId: replyTweetId,
+      text: replyText,
+      timestamp: replyTimestamp,
+      timeText: replyTimeText,
+      imageUrls: replyImages,
+      hasVideo: hasVideo
+    });
+  }
+
+  return JSON.stringify({ threadReplies: replies, mainHandle });
+})()
+```
+
+- If `threadReplies` is empty: this is a single tweet, proceed as before.
+- If `threadReplies` has entries: this is a thread. Include the replies in the Markdown output (see Step 5).
+- **Only same-author replies are included** — replies from other users are ignored.
+- If the page shows many replies but the thread might extend further, scroll down more and re-run the extraction to capture additional self-replies. Maximum 2 additional scroll attempts.
+
 ### 3.7 Full Content Extraction (Articles / Long Tweets)
 
 If the page title contains "記事" (article) or the snapshot shows article-type content with multiple sections, execute this additional JavaScript to extract the full article body:
@@ -259,7 +374,7 @@ After extraction, verify that tweet text was captured:
 
 ### 3.9 Close Browser
 
-- **browser-use**: `browser-use close`
+- **browser-use**: `MDB stop S` (stops the dedicated Chrome and deletes its temporary profile)
 - **Playwright**: `browser_close`
 
 ## Step 4: Create Directories & Download Images
@@ -269,7 +384,9 @@ First, create the output directories:
 mkdir -p mdbird/{username}/images
 ```
 
-For each image URL found:
+### Main tweet images
+
+For each image URL found in the main tweet:
 
 1. Construct a high-quality URL by ensuring the format parameter: replace any existing `name=` param with `name=large`, or append `?format=jpg&name=large` if no params exist
 2. Download with curl into the images subdirectory:
@@ -279,9 +396,20 @@ For each image URL found:
    Where `{N}` is 1-indexed (1, 2, 3, ...)
 3. If curl fails for an image, note it as failed — the Markdown will use the remote URL as fallback
 
+### Thread reply images
+
+For each thread reply that has images:
+
+1. Use the same high-quality URL construction as above
+2. Download with a naming scheme that includes the reply's tweet ID:
+   ```
+   curl -sL -o "mdbird/{username}/images/tweet-{username}-{reply_tweet_id}_{N}.jpg" "{image_url_with_large_param}"
+   ```
+3. If the reply's tweet ID is not available, use `{main_tweet_id}-reply{M}_{N}` where `{M}` is the reply index (1-indexed)
+
 ## Step 5: Generate Markdown
 
-Build the Markdown file using this template. **Only include sections where data exists** (omit Media section if no images, omit Quoted Tweet if none, omit Engagement if no metrics found).
+Build the Markdown file using this template. **Only include sections where data exists** (omit Media section if no images, omit Thread section if no self-replies, omit Quoted Tweet if none, omit Engagement if no metrics found).
 
 ```markdown
 ---
@@ -292,6 +420,7 @@ date: "{YYYY-MM-DD}"
 tweet_id: "{tweet_id}"
 url: "{canonical_url}"
 archived_at: "{current ISO 8601 datetime}"
+thread_length: {N}
 ---
 
 # @{handle} - {display_name}
@@ -304,6 +433,28 @@ archived_at: "{current ISO 8601 datetime}"
 
 ![Tweet image 1](./images/tweet-{username}-{tweet_id}_1.jpg)
 ![Tweet image 2](./images/tweet-{username}-{tweet_id}_2.jpg)
+
+## Thread
+
+### 2/{total}
+
+> {reply 1 text}
+
+**{reply 1 date}**
+
+![Reply 1 image](./images/tweet-{username}-{reply1_tweet_id}_1.jpg)
+
+---
+
+### 3/{total}
+
+> {reply 2 text}
+
+**{reply 2 date}**
+
+---
+
+(repeat for each self-reply)
 
 ## Quoted Tweet
 
@@ -329,6 +480,8 @@ archived_at: "{current ISO 8601 datetime}"
 ```
 
 Notes on the template:
+- **Thread section**: Only include if `threadReplies` from Step 3.6a is non-empty. Number each post as `{index}/{total}` where the main tweet is `1/{total}`. Separate each reply with `---`.
+- **`thread_length`** frontmatter: Total number of posts in the thread (main tweet + replies). Omit if not a thread (single tweet).
 - If a video is present but cannot be downloaded, add a note in the Media section: `*Video content available at original URL*`
 - If this tweet is a reply, add `reply_to: "{parent_tweet_url}"` to the frontmatter
 - For failed image downloads, use the remote URL instead of local path
@@ -344,8 +497,9 @@ Notes on the template:
    - File path saved
    - Author and handle
    - First ~80 characters of tweet text
-   - Number of images saved locally
-   - Any warnings (failed image downloads, video present but not saved, etc.)
+   - Thread info: if a thread, report "スレッド: {N}件のポスト" (e.g., "スレッド: 5件のポスト")
+   - Number of images saved locally (total across main tweet + thread replies)
+   - Any warnings (failed image downloads, video present but not saved, partial thread, etc.)
    - Japanese translation status (if Step 7 was executed)
 
 ## Step 7: Japanese Translation (Non-Japanese Content)
@@ -369,10 +523,11 @@ Create a Japanese-translated version of the Markdown file. Use the same structur
   - Keep code snippets, file names, URLs, and technical identifiers as-is
   - Translate blockquotes
 - **Quoted Tweet**: Translate the text
+- **Thread section**: Translate each reply's text to Japanese. Keep image paths, timestamps unchanged.
 - **Keep unchanged**:
   - Media section (same relative image paths — images are shared)
   - Engagement section (numbers as-is)
-  - Frontmatter basics (author, handle, date, tweet_id, url)
+  - Frontmatter basics (author, handle, date, tweet_id, url, thread_length)
   - Section heading for "Engagement" stays as "Engagement"
 
 Translated file template:
@@ -428,7 +583,8 @@ Add to the summary report:
 - **Deleted tweet**: If the page shows "このページは存在しません", "This post is from an account that no longer exists", or similar → notify user and stop
 - **Protected account**: If "These posts are protected" or "このアカウントのポストは非公開" → notify user and stop
 - **Login wall**: Always remove via JS (step 3.2). If content is still not accessible after removal → notify user that login is required and stop
-- **Thread tweet**: Only archive the specific tweet URL given. If it's a reply, note the parent in frontmatter
+- **Thread tweet**: Archive the specified tweet AND all self-replies (same author) that appear below it on the page. If the specified tweet is a reply to someone else's tweet, note the parent in frontmatter but do NOT include the parent tweet content — only include same-author continuations below the specified tweet.
+- **Long threads (10+ replies)**: Scroll multiple times to load all replies. Maximum 5 scroll attempts. If the thread appears truncated, add `partial_thread: true` to frontmatter and note in the summary.
 - **Network errors**: If the browser fails to load → notify user and suggest checking network/retrying
 - **No images**: Simply omit the Media section
 - **No engagement data**: Omit the Engagement section
@@ -452,7 +608,7 @@ When content extraction is incomplete (partial_content flag set, or tweet text i
 
 2. **Debug screenshot**: Save a screenshot to `mdbird/{username}/debug/debug-{tweet_id}.png`
    - Create the debug directory with `mkdir -p mdbird/{username}/debug`
-   - **browser-use**: `browser-use screenshot mdbird/{username}/debug/debug-{tweet_id}.png`
+   - **browser-use**: `MDB screenshot S mdbird/{username}/debug/debug-{tweet_id}.png`
    - **Playwright**: `browser_take_screenshot` (type: png) and save the result
 
 3. **Playwright-only diagnostics** (skip if using browser-use):
