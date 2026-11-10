@@ -154,6 +154,30 @@ MDB scroll S
 4. Wait 2 seconds
 5. `window.scrollTo(0, 0)` — scroll back to top
 
+### 3.4a Restore Original Text (Undo Auto-Translation)
+
+X may show posts **auto-translated** into the viewer's language (e.g. an English post shown in Japanese). The archive must keep the original text, so ALWAYS run this after scrolling (so thread replies are loaded) and before extracting:
+
+```javascript
+(()=>{
+  const labels = ['原文を表示', 'Show original', '원문 보기'];
+  let restored = 0;
+  document.querySelectorAll('article[data-testid="tweet"]').forEach(a => {
+    // The label sits in nested span/div; click only the innermost one, once per post.
+    // Clicking it twice switches the post back to the translation.
+    const hit = Array.from(a.querySelectorAll('span, div[role="button"], button')).find(e =>
+      labels.includes((e.textContent || '').trim()) &&
+      !Array.from(e.children).some(c => labels.includes((c.textContent || '').trim())));
+    if (hit) { hit.click(); restored++; }
+  });
+  return JSON.stringify({ restored });
+})()
+```
+
+- If `restored` > 0: wait 2 seconds, then run it **once more** (posts loaded later may still be translated). Stop when it returns 0. Run it at most 3 times — never click the same post twice in one run.
+- If `restored` is 0: the page is already in the original language. Continue.
+- The Japanese translation (`_ja.md`, Step 7) is made by mdbird itself from the original text, not taken from X's translation.
+
 ### 3.5 Error Check
 
 Execute this JavaScript to check for error states:

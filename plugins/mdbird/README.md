@@ -122,6 +122,10 @@ mdbird は以下の優先順でブラウザツールを選択します:
 
 ## Changelog
 
+### 1.3.1
+
+- X が自動で翻訳して表示した投稿を、取得の前に「原文を表示」で原文へ戻す。スレッドの返信も対象にした
+
 ### 1.3.0
 
 - browser-use 1.0 に対応。廃止されたサブコマンド（`open`・`eval`・`scroll`・`screenshot`・`close`）の代わりに、同梱の `scripts/mdb-browser.sh` から操作する
